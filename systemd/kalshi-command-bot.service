@@ -1,0 +1,15 @@
+[Unit]
+Description=Kalshi Command Bot
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/kalshi-command-bot
+EnvironmentFile=/opt/kalshi-command-bot/.env
+ExecStart=/opt/kalshi-command-bot/.venv/bin/python -m server.server
+Restart=on-failure
+RestartSec=2
+User=kalshi
+
+[Install]
+WantedBy=multi-user.target
