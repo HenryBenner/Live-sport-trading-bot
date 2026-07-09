@@ -3,6 +3,7 @@ name: Python check
 on:
   push:
   pull_request:
+  workflow_dispatch:
 
 jobs:
   py_compile:
@@ -12,4 +13,17 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-      - run: python -m py_compile iphone/iphone_sender.py server/*.py scripts/validate_config.py
+      - name: Show repo files
+        run: find . -maxdepth 3 -type f | sort
+      - name: Compile Python files
+        run: |
+          python -m py_compile \
+            iphone/iphone_sender.py \
+            server/__init__.py \
+            server/config_loader.py \
+            server/open_order_manager.py \
+            server/kalshi_client.py \
+            server/mode_handler.py \
+            server/command_router.py \
+            server/server.py \
+            scripts/validate_config.py
