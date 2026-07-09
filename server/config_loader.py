@@ -1,0 +1,106 @@
+from __future__ import annotations
+
+import json
+from pathlib import Path
+from typing import Any
+
+
+VALID_MODES = {"paper", "test", "live"}
+VALID_ACTIONS = {"buy", "sell_last_market_position", "kill_switch"}
+
+
+class ConfigError(ValueError):
+    pass
+
+
+def load_config(path: str | Path = "config/active.json") -> dict[str, Any]:
+    config_path = Path(path)
+    if not config_path.exists():
+        raise ConfigError(f"Config file not found: {config_path}")
+
+    with config_path.open("r", encoding="utf-8") as f:
+        config = json.load(f)
+
+    validate_config(config)
+    return config
+
+
+def validate_config(config: dict[str, Any]) -> None:
+    if not isinstance(config, dict):
+        raise ConfigError("Config must be a JSON object.")
+
+    mode = config.get("mode")
+    if mode not in VALID_MODES:
+        raise ConfigError(f"mode must be one of {sorted(VALID_MODES)}.")
+
+    commands = config.get("commands")
+    if not isinstance(commands, dict) or not commands:
+        raise ConfigError("commands must be a non-empty object.")
+
+    if "K" not in commands:
+        raise ConfigError("Kill switch command K is required.")
+
+    for key, command in commands.items():
+        if not isinstance(key, str) or len(key) != 1:
+            raise ConfigError(f"Command key must be a single character: {key!r}")
+
+        if not isinstance(command, dict):
+            raise ConfigError(f"Command {key} must be an object.")
+
+        action = command.get("action")
+        if action not in VALID_ACTIONS:
+            raise ConfigError(f"Command {key} has invalid action: {action!r}")
+
+        if command.get("enabled") is None:
+            raise ConfigError(f"Command {key} must include enabled true or false.")
+
+        if action == "buy":
+            _require(command, "label", key)
+            _require(command, "market_ticker", key)
+            _require(command, "side", key)
+            _require(command, "spend_up_to_dollars", key)
+
+            if command["side"] != "yes":
+                raise ConfigError(
+                    f"Command {key} side must be 'yes' in this slim version."
+                )
+
+            try:
+                spend = float(command["spend_up_to_dollars"])
+            except (TypeError, ValueError):
+                raise ConfigError(f"Command {key} spend_up_to_dollars must be numeric.")
+
+            if spend <= 0:
+                raise ConfigError(f"Command {key} spend_up_to_dollars must be positive.")
+
+        if action == "sell_last_market_position":
+            _require(command, "label", key)
+
+        if action == "kill_switch":
+            _require(command, "label", key)
+
+
+def _require(command: dict[str, Any], field: str, key: str) -> None:
+    if field not in command or command[field] in (None, ""):
+        raise ConfigError(f"Command {key} missing required field: {field}")
+
+
+def profile_summary(config: dict[str, Any]) -> dict[str, Any]:
+    commands = []
+    for key, command in config["commands"].items():
+        commands.append(
+            {
+                "key": key,
+                "label": command.get("label", ""),
+                "action": command.get("action", ""),
+                "enabled": bool(command.get("enabled")),
+            }
+        )
+
+    return {
+        "profile_name": config.get("profile_name", ""),
+        "sport": config.get("sport", ""),
+        "event_name": config.get("event_name", ""),
+        "mode": config.get("mode", ""),
+        "commands": sorted(commands, key=lambda x: x["key"]),
+    }
