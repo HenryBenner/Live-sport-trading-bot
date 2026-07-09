@@ -1,0 +1,70 @@
+{
+  "profile_name": "Example Sports Event",
+  "sport": "football",
+  "event_name": "Team A vs Team B",
+  "mode": "paper",
+  "kalshi_environment": "demo",
+  "cancel_open_orders_on_kill": true,
+  "aggressive_buy_price": "0.9900",
+  "aggressive_sell_price": "0.0100",
+  "commands": {
+    "A": {
+      "label": "Team A spread",
+      "action": "buy",
+      "market_ticker": "EXACT_KALSHI_MARKET_TICKER_HERE",
+      "side": "yes",
+      "spend_up_to_dollars": 500,
+      "enabled": true
+    },
+    "S": {
+      "label": "Team B spread",
+      "action": "buy",
+      "market_ticker": "EXACT_KALSHI_MARKET_TICKER_HERE",
+      "side": "yes",
+      "spend_up_to_dollars": 500,
+      "enabled": true
+    },
+    "D": {
+      "label": "Over total",
+      "action": "buy",
+      "market_ticker": "EXACT_KALSHI_MARKET_TICKER_HERE",
+      "side": "yes",
+      "spend_up_to_dollars": 300,
+      "enabled": true
+    },
+    "F": {
+      "label": "Under total",
+      "action": "buy",
+      "market_ticker": "EXACT_KALSHI_MARKET_TICKER_HERE",
+      "side": "yes",
+      "spend_up_to_dollars": 300,
+      "enabled": true
+    },
+    "1": {
+      "label": "Extra market 1",
+      "action": "buy",
+      "market_ticker": "EXACT_KALSHI_MARKET_TICKER_HERE",
+      "side": "yes",
+      "spend_up_to_dollars": 250,
+      "enabled": true
+    },
+    "2": {
+      "label": "Extra market 2",
+      "action": "buy",
+      "market_ticker": "EXACT_KALSHI_MARKET_TICKER_HERE",
+      "side": "yes",
+      "spend_up_to_dollars": 250,
+      "enabled": true
+    },
+    "M": {
+      "label": "Sell current Kalshi position for last bought market",
+      "action": "sell_last_market_position",
+      "enabled": true
+    },
+    "K": {
+      "label": "Kill switch",
+      "action": "kill_switch",
+      "enabled": true
+    }
+  }
+}
