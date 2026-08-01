@@ -36,7 +36,7 @@ def handle_buy(
             ticker=ticker,
             spend_up_to_dollars=spend,
             mode=mode,
-            aggressive_buy_price=config.get("aggressive_buy_price", "0.9900"),
+            aggressive_buy_price="0.9900",
         )
         message = f"Submitted one-contract test buy for {label}."
     else:
