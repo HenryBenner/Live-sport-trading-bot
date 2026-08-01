@@ -5,8 +5,13 @@
   "mode": "paper",
   "kalshi_environment": "demo",
   "cancel_open_orders_on_kill": true,
-  "aggressive_buy_price": "0.9900",
+  "aggressive_buy_price": "1.0000",
   "aggressive_sell_price": "0.0100",
+  "buy_retry_max_attempts": 100,
+  "buy_retry_max_seconds": 10.0,
+  "buy_retry_no_progress_limit": 20,
+  "buy_retry_delay_seconds": 0.05,
+  "buy_retry_error_limit": 10,
   "commands": {
     "A": {
       "label": "Team A spread",
