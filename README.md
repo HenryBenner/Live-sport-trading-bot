@@ -2,8 +2,6 @@
 
 A slim command execution system for sending short iPhone Python commands to a VPS, then placing Kalshi orders from the VPS.
 
-This project is intentionally small.
-
 It uses:
 
 - iPhone Python script as the controller
@@ -13,6 +11,7 @@ It uses:
 - Paper mode
 - Test mode
 - Live mode
+- Aggressive order-book sweeps for live buys
 - `M` to sell the current Kalshi YES position for the last bought market
 - `K` as a kill switch that cancels known open orders
 
@@ -21,10 +20,8 @@ It does not include:
 - Web page
 - Dashboard
 - Database
-- Position tracker
 - Saved trade history
 - Multi-exchange support
-- Automatic retries
 - Market search during live trading
 
 ## Architecture
@@ -38,7 +35,7 @@ VPS server
   ↓
 Kalshi REST API
   ↓
-Order submitted
+Orders submitted
 ```
 
 ## Repo structure
@@ -53,6 +50,7 @@ kalshi-command-bot/
     command_router.py
     mode_handler.py
     kalshi_client.py
+    aggressive_buyer.py
     open_order_manager.py
   config/
     active.example.json
@@ -64,33 +62,11 @@ kalshi-command-bot/
   docs/
     SOFTWARE_BLUEPRINT.md
     GAME_SETUP_CHECKLIST.md
+  tests/
+    test_aggressive_buy.py
   .env.example
   requirements.txt
-```
-
-## Important Kalshi API notes
-
-Kalshi uses separate production and demo API hosts. Production REST uses `https://external-api.kalshi.com/trade-api/v2`. Demo REST uses `https://external-api.demo.kalshi.co/trade-api/v2`.
-
-Authenticated requests require:
-
-- `KALSHI-ACCESS-KEY`
-- `KALSHI-ACCESS-TIMESTAMP`
-- `KALSHI-ACCESS-SIGNATURE`
-
-The signature is created from `timestamp + HTTP_METHOD + path`, signed with RSA-PSS and SHA256.
-
-This project uses the V2 event-market order endpoint:
-
-```text
-POST /portfolio/events/orders
-```
-
-It also uses:
-
-```text
-GET /portfolio/positions
-DELETE /portfolio/events/orders/{order_id}
+  requirements-dev.txt
 ```
 
 ## Safety model
@@ -103,7 +79,7 @@ Only the VPS stores:
 - Kalshi private key path
 - WebSocket control token
 
-The iPhone only sends commands like:
+The iPhone sends commands such as:
 
 ```text
 A
@@ -115,8 +91,6 @@ K
 
 ## Install on VPS
 
-Clone the repo on the VPS.
-
 ```bash
 git clone <your-repo-url>
 cd kalshi-command-bot
@@ -127,27 +101,12 @@ cp .env.example .env
 cp config/active.example.json config/active.json
 ```
 
-Edit `.env`.
+Edit `.env` and `config/active.json`.
 
 ```bash
 nano .env
-```
-
-Edit `config/active.json`.
-
-```bash
 nano config/active.json
-```
-
-Validate config.
-
-```bash
 python scripts/validate_config.py
-```
-
-Run server.
-
-```bash
 python -m server.server
 ```
 
@@ -162,17 +121,7 @@ wss://YOUR_VPS_DOMAIN_OR_IP:8765
 CONTROL_TOKEN
 ```
 
-Run the script.
-
-Type commands.
-
-```text
-A
-M
-K
-```
-
-The first version uses Enter after each command.
+Run the script and type a one-character command.
 
 ## Modes
 
@@ -190,29 +139,62 @@ test
 live
 ```
 
-### Paper mode
+Paper mode places no order.
 
-No Kalshi order is placed.
+Test mode submits one contract.
 
-The server prints what would happen.
+Live mode aggressively sweeps the current YES asks until it reaches the command's contract-cost cap or a stop condition occurs.
 
-### Test mode
+## Aggressive live-buy behavior
 
-Every buy command places exactly one contract.
+For every live buy command, the VPS:
 
-`M` sells up to one contract from the current Kalshi YES position for the last bought market.
+1. Reads the full market order book.
+2. Converts resting NO bids into executable YES asks.
+3. Calculates the largest IOC order that can sweep the cheapest available asks without exceeding the remaining contract-cost budget.
+4. Submits the IOC order at the highest ask included in that sweep.
+5. Reads the actual fill count and average fill price.
+6. Refreshes the order book and repeats immediately.
 
-### Live mode
+The loop stops when:
 
-Buy commands use `spend_up_to_dollars`.
+- The contract-cost cap is reached.
+- No executable liquidity appears for the configured number of checks.
+- The retry time window expires.
+- The maximum number of sweep orders is reached.
+- Kalshi returns a fatal market, authentication, balance, or validation error.
+- An ambiguous write cannot be confirmed safely.
 
-`M` sells the full current Kalshi YES position for the last bought market.
+Rate-limit and temporary server failures retry automatically. Ambiguous write failures reuse the exact same `client_order_id`, which prevents a timeout retry from becoming a duplicate order.
+
+Buy orders use:
+
+```text
+time_in_force = immediate_or_cancel
+self_trade_prevention_type = maker
+post_only = false
+```
+
+The `maker` self-trade setting cancels your conflicting resting maker order and allows the aggressive taker order to continue matching.
+
+## Live-buy settings
+
+```json
+"aggressive_buy_price": "1.0000",
+"buy_retry_max_attempts": 100,
+"buy_retry_max_seconds": 10.0,
+"buy_retry_no_progress_limit": 20,
+"buy_retry_delay_seconds": 0.05,
+"buy_retry_error_limit": 10
+```
+
+`aggressive_buy_price` is a maximum price ceiling. The bot submits orders at actual executable order-book prices below that ceiling. `1.0000` includes every valid YES ask without submitting an invalid $1.00 order.
+
+`spend_up_to_dollars` caps contract purchase cost. Kalshi fees are reported separately and can make the total account debit slightly higher than this value.
 
 ## Commands
 
-Commands live in `config/active.json`.
-
-Example:
+Normal buy commands are set in `config/active.json`.
 
 ```json
 "A": {
@@ -227,81 +209,16 @@ Example:
 
 Special commands:
 
-```json
-"M": {
-  "label": "Sell current Kalshi position for last bought market",
-  "action": "sell_last_market_position",
-  "enabled": true
-}
-```
-
-```json
-"K": {
-  "label": "Kill switch",
-  "action": "kill_switch",
-  "enabled": true
-}
-```
-
-## Order behavior
-
-This project uses aggressive immediate-or-cancel orders.
-
-Default buy price:
-
 ```text
-0.9900
+M = sell current Kalshi YES position for last bought market
+K = kill switch and cancel known open orders
 ```
 
-Default sell price:
-
-```text
-0.0100
-```
-
-These are not strategy settings. They are aggressive limit prices used to make the order marketable while still using Kalshi's limit order API shape.
-
-You can override them in config:
-
-```json
-"aggressive_buy_price": "0.9900",
-"aggressive_sell_price": "0.0100"
-```
-
-## No automatic retries
-
-Failed orders are not retried.
-
-Reason:
-
-A retry can arrive late and place an unwanted order.
-
-## Creating your GitHub repo
-
-This folder is ready to push.
-
-Option 1, GitHub CLI:
+## Tests
 
 ```bash
-git init
-git add .
-git commit -m "Initial Kalshi command bot"
-gh repo create kalshi-command-bot --private --source=. --remote=origin --push
-```
-
-Option 2, GitHub website:
-
-1. Create a private empty repo on GitHub.
-2. Copy the repo URL.
-3. Run:
-
-```bash
-git init
-git add .
-git commit -m "Initial Kalshi command bot"
-git remote add origin <your-repo-url>
-git branch -M main
-git push -u origin main
+pip install -r requirements-dev.txt
+pytest -q
 ```
 
 ## Legal and platform note
