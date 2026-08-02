@@ -1,36 +1,33 @@
-# Game Setup Checklist
+# Match Setup Checklist
 
-## Before event
+## Prepare and activate
 
-1. Find exact Kalshi market tickers.
-2. Copy `config/active.example.json` to `config/active.json`.
-3. Paste market tickers.
-4. Set command keys.
-5. Set dollar amounts.
-6. Set mode to `paper`.
-7. Restart VPS server.
-8. Run iPhone sender.
-9. Test every command.
+1. Give the setup agent the exact Kalshi event, market endpoints, command mapping,
+   lines or propositions, and per-press amounts.
+2. Have it follow `docs/AI_CONFIG_SPEC.md` and return JSON only.
+3. Upload the candidate JSON to the VPS.
+4. Activate and restart:
 
-## Test mode
+```bash
+python scripts/activate_config.py /path/to/generated-match.json
+sudo systemctl restart kalshi-command-bot
+```
 
-1. Set mode to `test`.
-2. Restart VPS server.
-3. Run iPhone sender.
-4. Press one buy key.
-5. Press M.
-6. Press K if needed.
+5. Connect from iSH and run `/status`.
 
-## Live mode
+## Test and live
 
-1. Set mode to `live`.
-2. Restart VPS server.
-3. Confirm profile name and event name.
-4. Confirm commands.
-5. Use single-character commands only.
+1. Start every new config in `paper` mode.
+2. Exercise each enabled buy key and the runtime limit commands.
+3. Change the config to `test`, reactivate it, and place the intended one-contract
+   test.
+4. Change the config to `live` only after the test result is confirmed.
+5. Use `/disarm`, `/block`, and the cost limits for normal runtime control.
+6. Use `K` for an emergency stop; use `/reset kill` only when trading may resume.
 
-## After event
+## After the event
 
-1. Stop server.
-2. Replace `active.json` before the next event.
-3. Never reuse old config without checking every ticker.
+1. Run `/disarm` or `K`.
+2. Review `logs/commands.jsonl` and Kalshi positions.
+3. Generate and activate a new config for the next event. A new event ticker starts
+   a new persistent session automatically.

@@ -21,7 +21,7 @@ class KalshiClientError(RuntimeError):
 class KalshiClient:
     def __init__(self) -> None:
         self.api_key_id = os.environ.get("KALSHI_API_KEY_ID", "").strip()
-        self.private_key_path = os.environ.get("KALSHI_PRIVATE_KEY_PATH", "").strip()
+        self.private_key_pem = os.environ.get("KALSHI_PRIVATE_KEY_PEM", "").strip()
 
         env = os.environ.get("KALSHI_ENV", "demo").strip().lower()
         base_url = os.environ.get("KALSHI_BASE_URL", "").strip()
@@ -38,7 +38,7 @@ class KalshiClient:
         self._private_key = None
 
     def ready(self) -> bool:
-        return bool(self.api_key_id and self.private_key_path)
+        return bool(self.api_key_id and self.private_key_pem)
 
     def _load_private_key(self):
         if self._private_key is not None:
@@ -47,15 +47,23 @@ class KalshiClient:
         if not self.api_key_id:
             raise KalshiClientError("Missing KALSHI_API_KEY_ID.")
 
-        if not self.private_key_path:
-            raise KalshiClientError("Missing KALSHI_PRIVATE_KEY_PATH.")
+        if not self.private_key_pem:
+            raise KalshiClientError("Missing KALSHI_PRIVATE_KEY_PEM.")
 
-        with open(self.private_key_path, "rb") as f:
+        # Environment files cannot safely contain a literal multiline value.
+        # Store the PEM on one line with literal \n separators; single-quoting
+        # the value preserves them in both python-dotenv and systemd.
+        pem = self.private_key_pem.replace("\\n", "\n").encode("utf-8")
+        try:
             self._private_key = serialization.load_pem_private_key(
-                f.read(),
+                pem,
                 password=None,
                 backend=default_backend(),
             )
+        except (TypeError, ValueError) as exc:
+            raise KalshiClientError(
+                "KALSHI_PRIVATE_KEY_PEM is not a valid unencrypted PEM private key."
+            ) from exc
         return self._private_key
 
     def _timestamp_ms(self) -> str:
@@ -208,10 +216,40 @@ class KalshiClient:
             "subaccount": self.subaccount,
             "exchange_index": self.exchange_index,
         }
-        if ticker:
-            params["market_ticker"] = ticker
-
         return self._request("DELETE", endpoint + "?" + urlencode(params))
+
+    def get_open_orders(self) -> list[dict[str, Any]]:
+        orders: list[dict[str, Any]] = []
+        cursor = ""
+        while True:
+            params: dict[str, Any] = {
+                "status": "resting",
+                "limit": 1000,
+                "subaccount": self.subaccount,
+            }
+            if cursor:
+                params["cursor"] = cursor
+            data = self._request("GET", "/portfolio/orders?" + urlencode(params))
+            page = data.get("orders", [])
+            if isinstance(page, list):
+                orders.extend(order for order in page if isinstance(order, dict))
+            cursor = str(data.get("cursor", "")).strip()
+            if not cursor:
+                return orders
+
+    def cancel_all_open_orders(self) -> dict[str, Any]:
+        canceled: list[dict[str, Any]] = []
+        errors: list[dict[str, Any]] = []
+        for order in self.get_open_orders():
+            order_id = str(order.get("order_id", "")).strip()
+            if not order_id:
+                continue
+            try:
+                result = self.cancel_order(order_id)
+                canceled.append({"order_id": order_id, "result": result})
+            except Exception as exc:
+                errors.append({"order_id": order_id, "error": str(exc)})
+        return {"canceled": canceled, "errors": errors}
 
     def _count_from_spend(self, spend_up_to_dollars: float, price: str) -> str:
         spend = Decimal(str(spend_up_to_dollars))

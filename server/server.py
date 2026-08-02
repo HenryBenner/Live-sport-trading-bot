@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import secrets
 import signal
 from datetime import datetime, timezone
 from typing import Any
@@ -12,9 +13,11 @@ from dotenv import load_dotenv
 from websockets.server import WebSocketServerProtocol
 
 from .command_router import CommandRouter
+from .audit_log import AuditLogger
 from .config_loader import ConfigError, load_config, profile_summary
 from .kalshi_client import KalshiClient
 from .open_order_manager import OpenOrderManager
+from .runtime_state import RuntimeState
 
 
 def now_iso() -> str:
@@ -35,39 +38,85 @@ class CommandServer:
         config_path = os.environ.get("CONFIG_PATH", "config/active.json")
         self.config = load_config(config_path)
 
+        runtime_path = os.environ.get(
+            "RUNTIME_STATE_PATH", "config/runtime_state.json"
+        )
+        audit_path = os.environ.get("AUDIT_LOG_PATH", "logs/commands.jsonl")
+        event_id = str(
+            self.config.get("event_ticker")
+            or self.config.get("event_name")
+            or self.config.get("profile_name")
+        )
+        self.runtime = RuntimeState(runtime_path, event_id=event_id)
+        self.audit = AuditLogger(audit_path)
+
         self.open_orders = OpenOrderManager()
         self.kalshi = KalshiClient()
         self.router = CommandRouter(
             config=self.config,
             kalshi=self.kalshi,
             open_orders=self.open_orders,
+            runtime=self.runtime,
+            audit=self.audit,
         )
 
     async def handler(self, websocket: WebSocketServerProtocol) -> None:
         print(f"[{now_iso()}] client connected")
+        if not await self._authenticate(websocket):
+            return
 
+        profile = profile_summary(self.config)
+        profile["runtime"] = self.router.status_response()
         await websocket.send(
             json.dumps(
                 {
                     "type": "profile",
                     "message": "Connected to Kalshi command server.",
-                    "profile": profile_summary(self.config),
+                    "profile": profile,
                 }
             )
         )
 
+        send_lock = asyncio.Lock()
         async for raw_message in websocket:
-            response = await self.handle_message(raw_message)
-            await websocket.send(json.dumps(response))
+            asyncio.create_task(
+                self._handle_and_send(websocket, send_lock, raw_message)
+            )
+
+    async def _authenticate(self, websocket: WebSocketServerProtocol) -> bool:
+        try:
+            raw = await asyncio.wait_for(websocket.recv(), timeout=10)
+            data = json.loads(raw)
+        except (asyncio.TimeoutError, json.JSONDecodeError):
+            await websocket.close(code=4001, reason="Authentication required")
+            return False
+
+        supplied = str(data.get("token", ""))
+        if data.get("type") != "auth" or not secrets.compare_digest(
+            supplied, self.control_token
+        ):
+            await websocket.close(code=4001, reason="Unauthorized")
+            return False
+        return True
+
+    async def _handle_and_send(
+        self,
+        websocket: WebSocketServerProtocol,
+        send_lock: asyncio.Lock,
+        raw_message: str,
+    ) -> None:
+        response = await self.handle_message(raw_message)
+        try:
+            async with send_lock:
+                await websocket.send(json.dumps(response))
+        except Exception:
+            self.audit.write("response_delivery_failed", response=response)
 
     async def handle_message(self, raw_message: str) -> dict[str, Any]:
         try:
             data = json.loads(raw_message)
         except json.JSONDecodeError:
             return {"type": "error", "message": "Invalid JSON."}
-
-        if data.get("token") != self.control_token:
-            return {"type": "error", "message": "Unauthorized."}
 
         msg_type = data.get("type")
         if msg_type == "ping":
@@ -77,12 +126,31 @@ class CommandServer:
             return {"type": "error", "message": f"Unsupported message type: {msg_type}"}
 
         key = str(data.get("key", "")).strip()
+        command_id = str(data.get("command_id", "")).strip()
         print(f"[{now_iso()}] command received: {key}")
 
+        self.audit.write(
+            "command_received",
+            session_id=self.runtime.session_id,
+            command_id=command_id,
+            command=key,
+        )
+
         response = await self.router.route(key)
+        if command_id:
+            response["command_id"] = command_id
 
         status = response.get("status") or response.get("type")
         print(f"[{now_iso()}] command result: {key} {status}")
+
+        self.audit.write(
+            "command_result",
+            session_id=self.runtime.session_id,
+            command_id=command_id,
+            command=key,
+            status=status,
+            response=response,
+        )
 
         return response
 

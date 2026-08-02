@@ -1,99 +1,40 @@
 # Kalshi Command Bot
 
-A slim command execution system for sending short iPhone Python commands to a VPS, then placing Kalshi orders from the VPS.
+A fast iSH-to-VPS command system for placing configured Kalshi orders. The phone
+contains no Kalshi credentials and makes no market decisions; it sends trade keys
+and runtime control commands to the VPS.
 
-It uses:
+## What it provides
 
-- iPhone Python script as the controller
-- WebSocket from iPhone to VPS
-- Kalshi API on the VPS only
-- One active config file
-- Paper mode
-- Test mode
-- Live mode
-- Aggressive order-book sweeps for live buys
-- `M` to sell the current Kalshi YES position for the last bought market
-- `K` as a kill switch that cancels known open orders
-
-It does not include:
-
-- Web page
-- Dashboard
-- Database
-- Saved trade history
-- Multi-exchange support
-- Market search during live trading
+- Paper, one-contract test, and live modes.
+- Aggressive IOC order-book sweeps for live buys.
+- One deterministic JSON event config with exact event/market tickers, URLs, and
+  line or proposition text.
+- Persistent event-session blocks, kill state, runtime cap overrides, and all-in
+  spending totals.
+- Per-press, per-market, and per-event cost caps.
+- Append-only JSONL command and trade logs; no database.
+- A responsive kill switch that interrupts active sweeps and cancels all resting
+  orders on the configured Kalshi subaccount.
 
 ## Architecture
 
 ```text
-iPhone Python script
-  ↓
-WebSocket command
-  ↓
-VPS server
-  ↓
-Kalshi REST API
-  ↓
-Orders submitted
+iPhone: iSH sender
+        |
+        | private WebSocket over Tailscale
+        v
+AWS VPS: command server -> runtime controls -> Kalshi REST API
 ```
 
-## Repo structure
+The recommended private connection is documented in
+[`docs/IPHONE_VPS_CONNECTION.md`](docs/IPHONE_VPS_CONNECTION.md).
 
-```text
-kalshi-command-bot/
-  iphone/
-    iphone_sender.py
-  server/
-    server.py
-    config_loader.py
-    command_router.py
-    mode_handler.py
-    kalshi_client.py
-    aggressive_buyer.py
-    open_order_manager.py
-  config/
-    active.example.json
-  scripts/
-    validate_config.py
-    run_server.sh
-  systemd/
-    kalshi-command-bot.service
-  docs/
-    SOFTWARE_BLUEPRINT.md
-    GAME_SETUP_CHECKLIST.md
-  tests/
-    test_aggressive_buy.py
-  .env.example
-  requirements.txt
-  requirements-dev.txt
-```
-
-## Safety model
-
-The iPhone never stores Kalshi credentials.
-
-Only the VPS stores:
-
-- Kalshi API key ID
-- Kalshi private key path
-- WebSocket control token
-
-The iPhone sends commands such as:
-
-```text
-A
-S
-1
-M
-K
-```
-
-## Install on VPS
+## VPS install
 
 ```bash
 git clone <your-repo-url>
-cd kalshi-command-bot
+cd Live-sport-trading-bot
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
@@ -101,118 +42,106 @@ cp .env.example .env
 cp config/active.example.json config/active.json
 ```
 
-Edit `.env` and `config/active.json`.
+`.env` is the single source of truth for the Kalshi environment and account-level
+risk defaults:
+
+```text
+KALSHI_ENV=demo
+DEFAULT_MARKET_COST_CAP_DOLLARS=
+EVENT_COST_CAP_DOLLARS=
+```
+
+The Kalshi signing key is stored directly in `.env`, on one line with literal
+`\n` separators:
+
+```text
+KALSHI_PRIVATE_KEY_PEM='-----BEGIN PRIVATE KEY-----\nKEY_BODY\n-----END PRIVATE KEY-----'
+```
+
+Keep the single quotes. The `.env` file is excluded from Git, so the key itself is
+never committed.
+
+Blank market or event caps mean infinite. `DEFAULT_MARKET_COST_CAP_DOLLARS` applies
+independently to every buy key. Runtime `/limit` commands override these defaults
+for the current event session.
+
+The all-in caps count confirmed contract cost plus the fees reported by Kalshi.
+The server reserves the configured fee rate and flat amount before submitting an
+order so the trade is kept inside the all-in allowance.
+
+## AI-generated event configs
+
+Use [`docs/AI_CONFIG_SPEC.md`](docs/AI_CONFIG_SPEC.md) as the contract for the setup
+agent. The generated JSON supplies exact endpoints and mappings; the trading bot
+does not select or infer markets.
+
+Upload the candidate and activate it atomically:
 
 ```bash
-nano .env
-nano config/active.json
-python scripts/validate_config.py
-python -m server.server
+python scripts/activate_config.py /path/to/generated-match.json
+sudo systemctl restart kalshi-command-bot
 ```
 
-## Run on iPhone
+A different `event_ticker` creates a fresh session. Replacing the file for the same
+event preserves blocks, limits, kill state, and spending across phone reconnects
+and VPS process restarts.
 
-Use an iPhone Python app that can install or include the `websockets` package.
+## Runtime commands
 
-Set these values inside `iphone/iphone_sender.py`, or enter them when prompted:
+Trade keys remain single characters such as `A`, `S`, `D`, `F`, `1`, and `2`.
 
 ```text
-wss://YOUR_VPS_DOMAIN_OR_IP:8765
-CONTROL_TOKEN
+/help
+/status
+/block A
+/block all
+/unblock A
+/unblock all
+/limit press A 50
+/limit market A 150
+/limit market A infinite
+/limit event 500
+/limit event infinite
+/disarm
+/arm
+/reset kill
+K
 ```
 
-Run the script and type a one-character command.
+`/block A` prevents `A` from executing and signals an active `A` sweep to stop.
+`K` persists the kill state, signals every active sweep, cancels all resting orders,
+waits for the order worker, and cancels once more. `/reset kill` clears the kill
+state but does not remove command blocks.
 
-## Modes
-
-Set mode in `config/active.json`.
-
-```json
-"mode": "paper"
-```
-
-Allowed modes:
-
-```text
-paper
-test
-live
-```
-
-Paper mode places no order.
-
-Test mode submits one contract.
-
-Live mode aggressively sweeps the current YES asks until it reaches the command's contract-cost cap or a stop condition occurs.
-
-## Aggressive live-buy behavior
-
-For every live buy command, the VPS:
-
-1. Reads the full market order book.
-2. Converts resting NO bids into executable YES asks.
-3. Calculates the largest IOC order that can sweep the cheapest available asks without exceeding the remaining contract-cost budget.
-4. Submits the IOC order at the highest ask included in that sweep.
-5. Reads the actual fill count and average fill price.
-6. Refreshes the order book and repeats immediately.
-
-The loop stops when:
-
-- The contract-cost cap is reached.
-- No executable liquidity appears for the configured number of checks.
-- The retry time window expires.
-- The maximum number of sweep orders is reached.
-- Kalshi returns a fatal market, authentication, balance, or validation error.
-- An ambiguous write cannot be confirmed safely.
-
-Rate-limit and temporary server failures retry automatically. Ambiguous write failures reuse the exact same `client_order_id`, which prevents a timeout retry from becoming a duplicate order.
-
-Buy orders use:
-
-```text
-time_in_force = immediate_or_cancel
-self_trade_prevention_type = maker
-post_only = false
-```
-
-The `maker` self-trade setting cancels your conflicting resting maker order and allows the aggressive taker order to continue matching.
-
-## Live-buy settings
-
-```json
-"aggressive_buy_price": "1.0000",
-"buy_retry_max_attempts": 100,
-"buy_retry_max_seconds": 10.0,
-"buy_retry_no_progress_limit": 20,
-"buy_retry_delay_seconds": 0.05,
-"buy_retry_error_limit": 10
-```
-
-`aggressive_buy_price` is a maximum price ceiling. The bot submits orders at actual executable order-book prices below that ceiling. `1.0000` includes every valid YES ask without submitting an invalid $1.00 order.
-
-`spend_up_to_dollars` caps contract purchase cost. Kalshi fees are reported separately and can make the total account debit slightly higher than this value.
-
-## Commands
-
-Normal buy commands are set in `config/active.json`.
+## Configured buy command
 
 ```json
 "A": {
   "label": "Team A spread",
   "action": "buy",
   "market_ticker": "EXACT_KALSHI_MARKET_TICKER",
+  "market_url": "https://kalshi.com/markets/EXACT_KALSHI_MARKET_TICKER",
+  "line_or_prop": "Team A -3.5",
   "side": "yes",
-  "spend_up_to_dollars": 500,
+  "spend_up_to_dollars": 50,
   "enabled": true
 }
 ```
 
-Special commands:
+`spend_up_to_dollars` is the normal per-press all-in ceiling. It can be changed for
+the active session with `/limit press A AMOUNT`.
+
+## Files written at runtime
 
 ```text
-M = sell current Kalshi YES position for last bought market
-K = kill switch and cancel known open orders
+config/runtime_state.json  local-run controls, limits, and spending totals
+logs/commands.jsonl        local-run command and trade audit records
 ```
+
+Both paths can be changed in `.env`; both are excluded from Git. The supplied
+systemd unit uses `/var/lib/kalshi-command-bot/runtime_state.json` and
+`/var/log/kalshi-command-bot/commands.jsonl`, with writable directories created by
+systemd for the unprivileged `kalshi` service user.
 
 ## Tests
 
@@ -223,8 +152,5 @@ pytest -q
 
 ## Legal and platform note
 
-Use only official Kalshi APIs.
-
-Do not use this from a restricted jurisdiction.
-
-Follow Kalshi's API agreement, trading rules, and market rules.
+Use only official Kalshi APIs, comply with applicable market rules and location
+restrictions, and treat all event-contract trading as financially risky.

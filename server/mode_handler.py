@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import threading
 from typing import Any
 
 from .aggressive_buyer import AggressiveBuyer
@@ -13,10 +14,16 @@ def handle_buy(
     command: dict[str, Any],
     config: dict[str, Any],
     kalshi: KalshiClient,
+    spend_cap_dollars: float | None = None,
+    cancel_event: threading.Event | None = None,
 ) -> dict[str, Any]:
     label = command.get("label", "")
     ticker = command.get("market_ticker", "")
-    spend = float(command.get("spend_up_to_dollars", 0))
+    spend = (
+        float(spend_cap_dollars)
+        if spend_cap_dollars is not None
+        else float(command.get("spend_up_to_dollars", 0))
+    )
 
     if mode == "paper":
         return {
@@ -53,6 +60,7 @@ def handle_buy(
                 config.get("buy_retry_delay_seconds", 0.05)
             ),
             error_limit=int(config.get("buy_retry_error_limit", 10)),
+            cancel_event=cancel_event,
         )
         message = (
             f"Aggressive sweep finished for {label}: "

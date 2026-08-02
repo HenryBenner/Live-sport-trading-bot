@@ -1,11 +1,18 @@
 [Unit]
 Description=Kalshi Command Bot
-After=network.target
+Wants=network-online.target
+After=network-online.target tailscaled.service
 
 [Service]
 Type=simple
 WorkingDirectory=/opt/kalshi-command-bot
 EnvironmentFile=/opt/kalshi-command-bot/.env
+StateDirectory=kalshi-command-bot
+StateDirectoryMode=0750
+LogsDirectory=kalshi-command-bot
+LogsDirectoryMode=0750
+Environment=RUNTIME_STATE_PATH=/var/lib/kalshi-command-bot/runtime_state.json
+Environment=AUDIT_LOG_PATH=/var/log/kalshi-command-bot/commands.jsonl
 ExecStart=/opt/kalshi-command-bot/.venv/bin/python -m server.server
 Restart=on-failure
 RestartSec=2

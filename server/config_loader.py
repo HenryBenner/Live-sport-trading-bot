@@ -33,6 +33,13 @@ def validate_config(config: dict[str, Any]) -> None:
     if mode not in VALID_MODES:
         raise ConfigError(f"mode must be one of {sorted(VALID_MODES)}.")
 
+    for field in ("profile_name", "event_name", "event_ticker", "event_url"):
+        if config.get(field) in (None, ""):
+            raise ConfigError(f"Config missing required field: {field}")
+
+    if str(config["event_ticker"]).lower() not in str(config["event_url"]).lower():
+        raise ConfigError("event_url must contain the exact event_ticker.")
+
     commands = config.get("commands")
     if not isinstance(commands, dict) or not commands:
         raise ConfigError("commands must be a non-empty object.")
@@ -40,6 +47,7 @@ def validate_config(config: dict[str, Any]) -> None:
     if "K" not in commands:
         raise ConfigError("Kill switch command K is required.")
 
+    buy_tickers: set[str] = set()
     for key, command in commands.items():
         if not isinstance(key, str) or len(key) != 1:
             raise ConfigError(f"Command key must be a single character: {key!r}")
@@ -57,6 +65,8 @@ def validate_config(config: dict[str, Any]) -> None:
         if action == "buy":
             _require(command, "label", key)
             _require(command, "market_ticker", key)
+            _require(command, "market_url", key)
+            _require(command, "line_or_prop", key)
             _require(command, "side", key)
             _require(command, "spend_up_to_dollars", key)
 
@@ -72,6 +82,18 @@ def validate_config(config: dict[str, Any]) -> None:
 
             if spend <= 0:
                 raise ConfigError(f"Command {key} spend_up_to_dollars must be positive.")
+
+            ticker = str(command["market_ticker"])
+            market_url = str(command["market_url"])
+            if ticker in buy_tickers:
+                raise ConfigError(
+                    f"Each buy command must use a unique market_ticker: {ticker}"
+                )
+            buy_tickers.add(ticker)
+            if ticker.lower() not in market_url.lower():
+                raise ConfigError(
+                    f"Command {key} market_url must contain its exact market_ticker."
+                )
 
         if action == "sell_last_market_position":
             _require(command, "label", key)
@@ -94,6 +116,10 @@ def profile_summary(config: dict[str, Any]) -> dict[str, Any]:
                 "label": command.get("label", ""),
                 "action": command.get("action", ""),
                 "enabled": bool(command.get("enabled")),
+                "market_ticker": command.get("market_ticker", ""),
+                "market_url": command.get("market_url", ""),
+                "line_or_prop": command.get("line_or_prop", ""),
+                "spend_up_to_dollars": command.get("spend_up_to_dollars"),
             }
         )
 
@@ -101,6 +127,8 @@ def profile_summary(config: dict[str, Any]) -> dict[str, Any]:
         "profile_name": config.get("profile_name", ""),
         "sport": config.get("sport", ""),
         "event_name": config.get("event_name", ""),
+        "event_ticker": config.get("event_ticker", ""),
+        "event_url": config.get("event_url", ""),
         "mode": config.get("mode", ""),
         "commands": sorted(commands, key=lambda x: x["key"]),
     }

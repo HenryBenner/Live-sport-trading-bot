@@ -1,8 +1,10 @@
 .env
 .venv/
+.test-deps/
 __pycache__/
+.pytest_cache/
 *.pyc
-*.key
-*.pem
 config/active.json
-.DS_Store
+config/runtime_state.json
+config/runtime_state.json.tmp
+logs/

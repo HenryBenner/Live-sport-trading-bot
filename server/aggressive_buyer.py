@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import time
+import threading
 import uuid
 from decimal import Decimal, ROUND_FLOOR
 from typing import Any
@@ -46,6 +47,7 @@ class AggressiveBuyer:
         no_progress_limit: int = 20,
         retry_delay_seconds: float = 0.05,
         error_limit: int = 10,
+        cancel_event: threading.Event | None = None,
     ) -> dict[str, Any]:
         cap = Decimal(str(spend_cap_dollars))
         ceiling = Decimal(str(maximum_buy_price))
@@ -61,7 +63,11 @@ class AggressiveBuyer:
 
         started = time.monotonic()
         deadline = started + max_seconds
-        count_step = self._market_count_step(ticker)
+        count_step = (
+            WHOLE_CONTRACT
+            if cancel_event is not None and cancel_event.is_set()
+            else self._market_count_step(ticker)
+        )
         remaining = cap
         filled = ZERO
         contract_cost = ZERO
@@ -74,6 +80,9 @@ class AggressiveBuyer:
         errors: list[str] = []
 
         while True:
+            if cancel_event is not None and cancel_event.is_set():
+                stop_reason = "canceled_by_control_command"
+                break
             if attempts >= max_attempts:
                 stop_reason = "max_attempts_reached"
                 break
@@ -111,13 +120,13 @@ class AggressiveBuyer:
                     base=retry_delay_seconds,
                     streak=consecutive_errors,
                     rate_limited=exc.status_code == 429,
+                    cancel_event=cancel_event,
                 )
                 continue
 
             if plan is None:
                 no_progress += 1
-                if retry_delay_seconds:
-                    time.sleep(retry_delay_seconds)
+                self._interruptible_wait(retry_delay_seconds, cancel_event)
                 continue
 
             attempts += 1
@@ -132,16 +141,20 @@ class AggressiveBuyer:
                     deadline=deadline,
                     error_limit=error_limit,
                     retry_delay_seconds=retry_delay_seconds,
+                    cancel_event=cancel_event,
                 )
                 errors.extend(submit_errors)
                 consecutive_errors = 0
             except AggressiveBuyError as exc:
                 errors.append(str(exc))
-                stop_reason = (
-                    "ambiguous_order_status"
-                    if exc.ambiguous_write
-                    else "fatal_order_error"
-                )
+                if cancel_event is not None and cancel_event.is_set():
+                    stop_reason = "canceled_by_control_command"
+                else:
+                    stop_reason = (
+                        "ambiguous_order_status"
+                        if exc.ambiguous_write
+                        else "fatal_order_error"
+                    )
                 break
 
             fill_count = self._first_decimal(
@@ -178,8 +191,7 @@ class AggressiveBuyer:
                 no_progress = 0
             else:
                 no_progress += 1
-                if retry_delay_seconds:
-                    time.sleep(retry_delay_seconds)
+                self._interruptible_wait(retry_delay_seconds, cancel_event)
 
         elapsed = time.monotonic() - started
         weighted_average = contract_cost / filled if filled > ZERO else ZERO
@@ -298,6 +310,7 @@ class AggressiveBuyer:
         deadline: float,
         error_limit: int,
         retry_delay_seconds: float,
+        cancel_event: threading.Event | None = None,
     ) -> tuple[dict[str, Any], list[str]]:
         payload = {
             "ticker": ticker,
@@ -317,6 +330,8 @@ class AggressiveBuyer:
         streak = 0
 
         while True:
+            if cancel_event is not None and cancel_event.is_set():
+                raise AggressiveBuyError("order submission canceled by control command")
             try:
                 return (
                     self._request(
@@ -353,6 +368,7 @@ class AggressiveBuyer:
                     base=retry_delay_seconds,
                     streak=streak,
                     rate_limited=exc.status_code == 429,
+                    cancel_event=cancel_event,
                 )
 
     def _recover_order(self, client_order_id: str) -> dict[str, Any] | None:
@@ -436,13 +452,28 @@ class AggressiveBuyer:
         )
 
     def _sleep(
-        self, *, base: float, streak: int, rate_limited: bool
+        self,
+        *,
+        base: float,
+        streak: int,
+        rate_limited: bool,
+        cancel_event: threading.Event | None = None,
     ) -> None:
         if rate_limited:
             delay = min(1.0, max(0.05, base) * (2 ** min(streak - 1, 4)))
         else:
             delay = min(0.5, max(0.01, base))
-        time.sleep(delay)
+        self._interruptible_wait(delay, cancel_event)
+
+    def _interruptible_wait(
+        self, delay: float, cancel_event: threading.Event | None
+    ) -> None:
+        if delay <= 0:
+            return
+        if cancel_event is None:
+            time.sleep(delay)
+        else:
+            cancel_event.wait(delay)
 
     def _first_decimal(
         self, data: dict[str, Any], *keys: str

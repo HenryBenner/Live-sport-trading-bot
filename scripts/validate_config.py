@@ -25,11 +25,17 @@ def main() -> int:
     print("VALID CONFIG")
     print(f"Profile: {summary['profile_name']}")
     print(f"Event: {summary['event_name']}")
+    print(f"Event ticker: {summary['event_ticker']}")
+    print(f"Event URL: {summary['event_url']}")
     print(f"Mode: {summary['mode']}")
     print("Commands:")
     for command in summary["commands"]:
         state = "enabled" if command["enabled"] else "disabled"
-        print(f"  {command['key']}: {command['label']} [{command['action']}] {state}")
+        detail = command.get("line_or_prop") or ""
+        print(
+            f"  {command['key']}: {command['label']} [{command['action']}] "
+            f"{state} {detail}"
+        )
 
     return 0
 

@@ -2,9 +2,9 @@
   "profile_name": "Example Sports Event",
   "sport": "football",
   "event_name": "Team A vs Team B",
+  "event_ticker": "EXACT_KALSHI_EVENT_TICKER",
+  "event_url": "https://kalshi.com/events/EXACT_KALSHI_EVENT_TICKER",
   "mode": "paper",
-  "kalshi_environment": "demo",
-  "cancel_open_orders_on_kill": true,
   "aggressive_buy_price": "1.0000",
   "aggressive_sell_price": "0.0100",
   "buy_retry_max_attempts": 100,
@@ -17,6 +17,8 @@
       "label": "Team A spread",
       "action": "buy",
       "market_ticker": "EXACT_KALSHI_MARKET_TICKER_HERE",
+      "market_url": "https://kalshi.com/markets/EXACT_KALSHI_MARKET_TICKER_HERE",
+      "line_or_prop": "Team A spread at the exact configured line",
       "side": "yes",
       "spend_up_to_dollars": 500,
       "enabled": true
@@ -24,7 +26,9 @@
     "S": {
       "label": "Team B spread",
       "action": "buy",
-      "market_ticker": "EXACT_KALSHI_MARKET_TICKER_HERE",
+      "market_ticker": "EXACT_KALSHI_MARKET_TICKER_TEAM_B",
+      "market_url": "https://kalshi.com/markets/EXACT_KALSHI_MARKET_TICKER_TEAM_B",
+      "line_or_prop": "Team B spread at the exact configured line",
       "side": "yes",
       "spend_up_to_dollars": 500,
       "enabled": true
@@ -32,7 +36,9 @@
     "D": {
       "label": "Over total",
       "action": "buy",
-      "market_ticker": "EXACT_KALSHI_MARKET_TICKER_HERE",
+      "market_ticker": "EXACT_KALSHI_MARKET_TICKER_OVER",
+      "market_url": "https://kalshi.com/markets/EXACT_KALSHI_MARKET_TICKER_OVER",
+      "line_or_prop": "Over the exact configured total",
       "side": "yes",
       "spend_up_to_dollars": 300,
       "enabled": true
@@ -40,7 +46,9 @@
     "F": {
       "label": "Under total",
       "action": "buy",
-      "market_ticker": "EXACT_KALSHI_MARKET_TICKER_HERE",
+      "market_ticker": "EXACT_KALSHI_MARKET_TICKER_UNDER",
+      "market_url": "https://kalshi.com/markets/EXACT_KALSHI_MARKET_TICKER_UNDER",
+      "line_or_prop": "Under the exact configured total",
       "side": "yes",
       "spend_up_to_dollars": 300,
       "enabled": true
@@ -48,7 +56,9 @@
     "1": {
       "label": "Extra market 1",
       "action": "buy",
-      "market_ticker": "EXACT_KALSHI_MARKET_TICKER_HERE",
+      "market_ticker": "EXACT_KALSHI_MARKET_TICKER_EXTRA_1",
+      "market_url": "https://kalshi.com/markets/EXACT_KALSHI_MARKET_TICKER_EXTRA_1",
+      "line_or_prop": "Exact proposition text for extra market 1",
       "side": "yes",
       "spend_up_to_dollars": 250,
       "enabled": true
@@ -56,7 +66,9 @@
     "2": {
       "label": "Extra market 2",
       "action": "buy",
-      "market_ticker": "EXACT_KALSHI_MARKET_TICKER_HERE",
+      "market_ticker": "EXACT_KALSHI_MARKET_TICKER_EXTRA_2",
+      "market_url": "https://kalshi.com/markets/EXACT_KALSHI_MARKET_TICKER_EXTRA_2",
+      "line_or_prop": "Exact proposition text for extra market 2",
       "side": "yes",
       "spend_up_to_dollars": 250,
       "enabled": true

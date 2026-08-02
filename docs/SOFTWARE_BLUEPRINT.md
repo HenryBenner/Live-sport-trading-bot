@@ -1,83 +1,51 @@
-# Slim Kalshi Python Command Trading Bot Blueprint
+# Kalshi Command Bot Blueprint
 
-## Purpose
-
-Build a small Kalshi command execution tool.
-
-The iPhone runs a Python sender.
-
-The VPS runs the trading server.
-
-The phone sends commands only.
-
-The VPS places Kalshi orders.
-
-## Flow
+## Components
 
 ```text
-iPhone Python script
-  ↓
-WebSocket
-  ↓
-VPS server
-  ↓
-Kalshi API
+iSH input and background receiver
+  -> authenticated private WebSocket
+  -> concurrent control router on the VPS
+  -> serialized order worker
+  -> Kalshi REST API
 ```
 
-## Runtime state
+Trade execution runs in a worker thread so the WebSocket loop can process `K` and
+`/block` while a sweep is active. Only one buy or sell worker may execute at once.
 
-The server keeps only:
+## Persistent event session
 
-```text
-active_config
-kill_switch_active
-last_market_ticker
-last_label
-open_order_ids
-```
+`config/runtime_state.json` stores:
 
-There is no database.
+- session and event identifiers;
+- blocked buy keys;
+- persistent kill-switch state;
+- per-press, per-market, and event limit overrides;
+- confirmed all-in event and per-market spending.
 
-There is no local position tracker.
+The state survives phone reconnects and process restarts. A new event ticker starts
+a new session. `logs/commands.jsonl` contains append-only command and result records.
 
-For M, the server asks Kalshi for the current YES position in the last bought market.
+## Cost limits
 
-## Modes
+- Per press: `spend_up_to_dollars` in the event config, overridable with a command.
+- Per market: `.env` default applied separately to each buy key, overridable per key.
+- Per event: `.env` default shared by all buy keys, overridable for the session.
 
-```text
-paper
-test
-live
-```
+Blank `.env` market and event limits are infinite. Confirmed contract cost and
+reported Kalshi fees count against both persistent totals. A configurable reserve
+reduces the submitted contract budget before the order is sent.
 
-Paper mode prints only.
+## Kill behavior
 
-Test mode places one contract.
+`K` first persists the kill state and sets cancellation events for every active
+sweep. It then asks Kalshi for all resting orders on the configured subaccount and
+cancels them, waits for the serialized worker to stop, and repeats the query and
+cancellation. New trades remain rejected until `/reset kill`.
 
-Live mode uses spend_up_to_dollars.
+## Event replacement
 
-## Commands
-
-Normal buy commands are set in `config/active.json`.
-
-Special commands:
-
-```text
-M = sell current Kalshi YES position for last bought market
-K = kill switch and cancel known open orders
-```
-
-## Event reset
-
-Before each event:
-
-1. Replace `config/active.json`.
-2. Set mode to paper.
-3. Restart server.
-4. Test commands.
-5. Set mode to test.
-6. Restart server.
-7. Test one-contract order.
-8. Set mode to live.
-9. Restart server.
-10. Use during the event.
+An external AI setup agent produces deterministic JSON using exact supplied Kalshi
+tickers, URLs, and proposition text. `scripts/activate_config.py` validates the whole
+candidate and atomically replaces `config/active.json`. The service is restarted to
+load the file.
