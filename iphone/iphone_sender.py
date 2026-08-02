@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import inspect
 import json
 import os
 import uuid
@@ -27,7 +28,18 @@ async def run_sender() -> None:
     while True:
         try:
             print(f"Connecting to {url} ...")
-            async with websockets.connect(url, ping_interval=10, ping_timeout=10) as ws:
+            connect_options = {
+                "ping_interval": 10,
+                "ping_timeout": 10,
+                "open_timeout": 15,
+            }
+            # websockets 15+ automatically uses configured system/environment
+            # proxies. Tailscale addresses are private peers and must connect
+            # directly. Older versions don't expose the proxy argument.
+            if "proxy" in inspect.signature(websockets.connect).parameters:
+                connect_options["proxy"] = None
+
+            async with websockets.connect(url, **connect_options) as ws:
                 await ws.send(json.dumps({"type": "auth", "token": token}))
                 print("Connected. Use /help to list controls.")
                 receiver = asyncio.create_task(receive_messages(ws))
