@@ -10,6 +10,7 @@ from typing import Any
 
 
 ZERO = Decimal("0")
+VALID_MODES = {"paper", "test", "live"}
 
 
 class RuntimeStateError(ValueError):
@@ -50,6 +51,7 @@ class RuntimeState:
             "event_id": event_id,
             "blocked_keys": [],
             "kill_switch_active": False,
+            "mode_override": None,
             "limit_overrides": {
                 "event": {},
                 "market": {},
@@ -117,6 +119,20 @@ class RuntimeState:
     def kill_active(self) -> bool:
         with self._lock:
             return bool(self.data.get("kill_switch_active"))
+
+    def set_mode_override(self, mode: str | None) -> None:
+        if mode is not None and mode not in VALID_MODES:
+            raise RuntimeStateError(
+                f"Runtime mode must be one of {sorted(VALID_MODES)} or config."
+            )
+        with self._lock:
+            self.data["mode_override"] = mode
+            self.save()
+
+    def mode_override(self) -> str | None:
+        with self._lock:
+            mode = self.data.get("mode_override")
+            return str(mode) if mode in VALID_MODES else None
 
     def set_limit_override(
         self, scope: str, key: str | None, amount: Decimal | None

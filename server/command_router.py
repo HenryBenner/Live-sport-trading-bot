@@ -62,8 +62,6 @@ class CommandRouter:
             return await self._route_control(raw_command)
 
         key = raw_command.upper()
-        mode = self.config.get("mode", "paper")
-
         command = self.config["commands"].get(key)
         if command is None:
             return self._error(key, "Unknown command. Use /commands.")
@@ -82,20 +80,18 @@ class CommandRouter:
             return self._error(key, "Command blocked for this event session.")
 
         if action == "buy":
-            return await self._buy(key, command, mode)
+            return await self._buy(key, command)
 
         if action == "sell_last_market_position":
-            return await self._sell_last(key, mode)
+            return await self._sell_last(key)
 
         return self._error(key, f"Unsupported action: {action}")
 
-    async def _buy(
-        self, key: str, command: dict[str, Any], mode: str
-    ) -> dict[str, Any]:
-        if mode != "paper" and not self.kalshi.ready():
-            return self._error(key, "Kalshi client is not ready. Check .env.")
-
+    async def _buy(self, key: str, command: dict[str, Any]) -> dict[str, Any]:
         async with self._execution_lock:
+            mode = self.effective_mode()
+            if mode != "paper" and not self.kalshi.ready():
+                return self._error(key, "Kalshi client is not ready. Check .env.")
             if self.runtime.kill_active() or self.runtime.is_blocked(key):
                 return self._error(key, "Command was blocked before execution began.")
 
@@ -157,10 +153,11 @@ class CommandRouter:
             )
             return response
 
-    async def _sell_last(self, key: str, mode: str) -> dict[str, Any]:
-        if mode != "paper" and not self.kalshi.ready():
-            return self._error(key, "Kalshi client is not ready. Check .env.")
+    async def _sell_last(self, key: str) -> dict[str, Any]:
         async with self._execution_lock:
+            mode = self.effective_mode()
+            if mode != "paper" and not self.kalshi.ready():
+                return self._error(key, "Kalshi client is not ready. Check .env.")
             try:
                 response = await asyncio.to_thread(
                     handle_sell_last,
@@ -185,7 +182,7 @@ class CommandRouter:
 
         canceled: list[dict[str, Any]] = []
         errors: list[dict[str, Any]] = []
-        if self.config.get("mode") != "paper" and self.kalshi.ready():
+        if self.kalshi.ready():
             first = await self._cancel_all_safely()
             canceled.extend(first["canceled"])
             errors.extend(first["errors"])
@@ -238,6 +235,8 @@ class CommandRouter:
             return self._set_block(name == "/block", parts)
         if name == "/limit":
             return self._set_limit(parts)
+        if name == "/mode":
+            return self._set_mode(parts)
         if name == "/disarm":
             return self._set_block(True, ["/block", "all"])
         if name == "/arm":
@@ -249,6 +248,37 @@ class CommandRouter:
             self.audit.write("kill_switch_reset", session_id=self.runtime.session_id)
             return self._control_result("Kill switch reset. Existing command blocks remain.")
         return self._error(raw_command, "Unknown control command. Use /help.")
+
+    def _set_mode(self, parts: list[str]) -> dict[str, Any]:
+        if len(parts) != 2:
+            return self._error(" ".join(parts), "Usage: /mode paper|test|live|config")
+
+        requested = parts[1].lower()
+        if requested == "config":
+            override = None
+        elif requested in {"paper", "test", "live"}:
+            override = requested
+        else:
+            return self._error(" ".join(parts), "Usage: /mode paper|test|live|config")
+
+        self.runtime.set_mode_override(override)
+        with self._active_lock:
+            for cancel_event in self._active_cancels.values():
+                cancel_event.set()
+
+        effective = self.effective_mode()
+        source = "event config" if override is None else "runtime command"
+        self.audit.write(
+            "mode_changed",
+            session_id=self.runtime.session_id,
+            requested_mode=requested,
+            effective_mode=effective,
+            source=source,
+        )
+        return self._control_result(
+            f"Mode set to {effective.upper()} from {source}. "
+            "Active buy sweeps were signaled to stop."
+        )
 
     def _set_block(self, should_block: bool, parts: list[str]) -> dict[str, Any]:
         if len(parts) != 2:
@@ -353,7 +383,13 @@ class CommandRouter:
             "profile_name": self.config.get("profile_name", ""),
             "event_name": self.config.get("event_name", ""),
             "event_ticker": self.config.get("event_ticker", ""),
-            "mode": self.config.get("mode", ""),
+            "mode": self.effective_mode(),
+            "configured_mode": self.config.get("mode", "paper"),
+            "mode_source": (
+                "runtime command"
+                if self.runtime.mode_override() is not None
+                else "event config"
+            ),
             "kill_switch_active": self.runtime.kill_active(),
             "event_cap_dollars": money_text(self._effective_event_cap()),
             "event_spent_all_in_dollars": money_text(self.runtime.spent_event()),
@@ -366,9 +402,15 @@ class CommandRouter:
         response["message"] = (
             "/status | /block A|all | /unblock A|all | "
             "/limit event AMOUNT|infinite | /limit market A AMOUNT|infinite | "
-            "/limit press A AMOUNT|infinite | /disarm | /arm | /reset kill | K"
+            "/limit press A AMOUNT|infinite | /mode paper|test|live|config | "
+            "/disarm | /arm | /reset kill | K"
         )
         return response
+
+    def effective_mode(self) -> str:
+        return self.runtime.mode_override() or str(
+            self.config.get("mode", "paper")
+        )
 
     def _all_in_allowance(self, key: str, command: dict[str, Any]) -> Decimal:
         allowances = [self._effective_press_cap(key, command)]

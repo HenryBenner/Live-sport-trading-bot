@@ -66,6 +66,7 @@ class CommandServer:
             return
 
         profile = profile_summary(self.config)
+        profile["mode"] = self.router.effective_mode()
         profile["runtime"] = self.router.status_response()
         await websocket.send(
             json.dumps(
@@ -157,7 +158,7 @@ class CommandServer:
     async def run(self) -> None:
         print(f"Starting Kalshi command server on {self.host}:{self.port}")
         print(f"Profile: {self.config.get('profile_name')}")
-        print(f"Mode: {self.config.get('mode')}")
+        print(f"Mode: {self.router.effective_mode()}")
 
         stop = asyncio.Future()
 

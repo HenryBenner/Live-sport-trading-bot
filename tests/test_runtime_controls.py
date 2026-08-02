@@ -96,12 +96,45 @@ def test_new_event_gets_a_fresh_session(tmp_path):
     path = tmp_path / "state.json"
     first = RuntimeState(path, event_id="EVENT-1")
     first.block(["A"])
+    first.set_mode_override("live")
     first_id = first.session_id
 
     second = RuntimeState(path, event_id="EVENT-2")
     assert second.session_id != first_id
     assert not second.is_blocked("A")
+    assert second.mode_override() is None
     assert second.spent_event() == Decimal("0")
+
+
+def test_mode_command_changes_and_persists_effective_mode(tmp_path, monkeypatch):
+    router, runtime = make_router(tmp_path, monkeypatch)
+
+    changed = asyncio.run(router.route("/mode live"))
+    assert changed["type"] == "control"
+    assert "LIVE" in changed["message"]
+    assert runtime.mode_override() == "live"
+    assert router.status_response()["mode"] == "live"
+    assert router.status_response()["mode_source"] == "runtime command"
+    assert "not ready" in asyncio.run(router.route("A"))["message"]
+
+    reloaded = RuntimeState(tmp_path / "state.json", event_id="EVENT-1")
+    assert reloaded.mode_override() == "live"
+
+    reset = asyncio.run(router.route("/mode config"))
+    assert reset["type"] == "control"
+    assert runtime.mode_override() is None
+    assert router.status_response()["mode"] == "paper"
+    assert router.status_response()["mode_source"] == "event config"
+    assert asyncio.run(router.route("A"))["status"] == "paper_ok"
+
+
+def test_mode_command_rejects_invalid_mode(tmp_path, monkeypatch):
+    router, runtime = make_router(tmp_path, monkeypatch)
+
+    response = asyncio.run(router.route("/mode dangerous"))
+
+    assert response["type"] == "error"
+    assert runtime.mode_override() is None
 
 
 def test_kill_state_blocks_trades_until_explicit_reset(tmp_path, monkeypatch):

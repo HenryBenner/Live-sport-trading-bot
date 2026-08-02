@@ -103,6 +103,10 @@ Trade keys may be one or more uppercase characters, such as `A`, `OVER`, or
 /limit market A infinite
 /limit event 500
 /limit event infinite
+/mode paper
+/mode test
+/mode live
+/mode config
 /disarm
 /arm
 /reset kill
@@ -113,6 +117,11 @@ K
 `K` persists the kill state, signals every active sweep, cancels all resting orders,
 waits for the order worker, and cancels once more. `/reset kill` clears the kill
 state but does not remove command blocks.
+
+`/mode paper`, `/mode test`, and `/mode live` change the effective mode immediately
+and persist it for the current event session. `/mode config` clears the runtime
+override and returns to the mode in `config/active.json`. Changing mode signals any
+active buy sweep to stop; later commands use the new mode.
 
 ## Configured buy command
 

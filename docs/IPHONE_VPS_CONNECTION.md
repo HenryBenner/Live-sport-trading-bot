@@ -47,3 +47,7 @@ Control token: the CONTROL_TOKEN from the VPS
 The sender authenticates before the server exposes the event profile. Incoming
 results print in the background, so `K` or `/block A` can be sent while a sweep is
 still active.
+
+Use `/mode paper`, `/mode test`, or `/mode live` to change the current event
+session's mode from the phone. The override persists across reconnects and server
+restarts. Use `/mode config` to return to the mode in the active config file.
