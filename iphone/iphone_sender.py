@@ -54,10 +54,6 @@ async def run_sender() -> None:
                             print("Exiting.")
                             return
 
-                        if len(key) != 1 and not key.startswith("/"):
-                            print("Use a one-character trade key or a /control command.")
-                            continue
-
                         message = {
                             "type": "command",
                             "key": key,
@@ -133,7 +129,8 @@ def print_pretty(raw: str) -> None:
             )
             print(
                 f"  {command.get('key')}  {command.get('label')} | "
-                f"{command.get('line_or_prop')} | {state} | "
+                f"{command.get('line_or_prop')} | "
+                f"{command.get('side', '').upper()} | {state} | "
                 f"press ${command.get('press_cap_dollars')} | "
                 f"market {market_cap} | spent ${command.get('spent_all_in_dollars')}"
             )

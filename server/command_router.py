@@ -36,6 +36,7 @@ class CommandRouter:
         self.audit = audit
         self.last_market_ticker: str | None = None
         self.last_label: str | None = None
+        self.last_outcome_side: str | None = None
         self._execution_lock = asyncio.Lock()
         self._active_lock = threading.Lock()
         self._active_cancels: dict[str, threading.Event] = {}
@@ -62,9 +63,6 @@ class CommandRouter:
 
         key = raw_command.upper()
         mode = self.config.get("mode", "paper")
-
-        if len(key) != 1:
-            return self._error(key, "Use a one-character trade key or /help.")
 
         command = self.config["commands"].get(key)
         if command is None:
@@ -143,6 +141,7 @@ class CommandRouter:
                 self.runtime.record_spend(key, all_in_spend)
                 self.last_market_ticker = command.get("market_ticker")
                 self.last_label = command.get("label")
+                self.last_outcome_side = command.get("side", "yes")
 
             response["all_in_spend_dollars"] = money_text(all_in_spend)
             response["all_in_allowance_dollars"] = money_text(all_in_allowance)
@@ -169,6 +168,7 @@ class CommandRouter:
                     command_key=key,
                     last_market_ticker=self.last_market_ticker,
                     last_label=self.last_label,
+                    last_outcome_side=self.last_outcome_side,
                     config=self.config,
                     kalshi=self.kalshi,
                 )
@@ -339,6 +339,7 @@ class CommandRouter:
                     "label": command.get("label", ""),
                     "line_or_prop": command.get("line_or_prop", ""),
                     "market_ticker": command.get("market_ticker", ""),
+                    "side": command.get("side", ""),
                     "blocked": self.runtime.is_blocked(key),
                     "press_cap_dollars": money_text(self._effective_press_cap(key, command)),
                     "market_cap_dollars": money_text(self._effective_market_cap(key)),

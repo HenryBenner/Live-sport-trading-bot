@@ -19,6 +19,7 @@ def handle_buy(
 ) -> dict[str, Any]:
     label = command.get("label", "")
     ticker = command.get("market_ticker", "")
+    outcome_side = command.get("side", "yes")
     spend = (
         float(spend_cap_dollars)
         if spend_cap_dollars is not None
@@ -34,13 +35,14 @@ def handle_buy(
             "market_ticker": ticker,
             "message": (
                 f"Would aggressively sweep {label} up to ${spend:.2f}. "
-                "No Kalshi order placed."
+                f"Configured side: {outcome_side.upper()}. No Kalshi order placed."
             ),
         }
 
     if mode == "test":
-        result = kalshi.place_yes_buy(
+        result = kalshi.place_outcome_buy(
             ticker=ticker,
+            outcome_side=outcome_side,
             spend_up_to_dollars=spend,
             mode=mode,
             aggressive_buy_price="0.9900",
@@ -49,6 +51,7 @@ def handle_buy(
     else:
         result = AggressiveBuyer(kalshi).sweep(
             ticker=ticker,
+            outcome_side=outcome_side,
             spend_cap_dollars=spend,
             maximum_buy_price=config.get("aggressive_buy_price", "1.0000"),
             max_attempts=int(config.get("buy_retry_max_attempts", 100)),
@@ -86,6 +89,7 @@ def handle_sell_last(
     command_key: str,
     last_market_ticker: str | None,
     last_label: str | None,
+    last_outcome_side: str | None,
     config: dict[str, Any],
     kalshi: KalshiClient,
 ) -> dict[str, Any]:
@@ -98,6 +102,7 @@ def handle_sell_last(
         }
 
     sell_price = config.get("aggressive_sell_price", "0.0100")
+    outcome_side = last_outcome_side or "yes"
 
     if mode == "paper":
         return {
@@ -107,13 +112,14 @@ def handle_sell_last(
             "status": "paper_ok",
             "market_ticker": last_market_ticker,
             "message": (
-                "Would sell current Kalshi YES position for "
+                f"Would sell current Kalshi {outcome_side.upper()} position for "
                 f"{last_label or last_market_ticker}."
             ),
         }
 
-    result = kalshi.sell_yes_position(
+    result = kalshi.sell_outcome_position(
         ticker=last_market_ticker,
+        outcome_side=outcome_side,
         mode=mode,
         aggressive_sell_price=sell_price,
     )

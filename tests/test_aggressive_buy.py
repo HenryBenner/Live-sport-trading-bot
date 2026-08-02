@@ -38,6 +38,44 @@ def test_build_sweep_uses_multiple_levels_without_exceeding_cap():
     assert plan["count"] * plan["price"] <= Decimal("70")
 
 
+def test_no_sweep_uses_yes_bids_and_submits_an_ask():
+    buyer = AggressiveBuyer(FakeKalshi())
+    plan = buyer._build_sweep_order(
+        orderbook={
+            "orderbook_fp": {
+                "yes_dollars": [["0.65", "10"]],
+                "no_dollars": [],
+            }
+        },
+        remaining_budget=Decimal("3.50"),
+        maximum_buy_price=Decimal("0.50"),
+        count_step=Decimal("1"),
+        outcome_side="no",
+    )
+    assert plan == {"count": Decimal("10"), "price": Decimal("0.35")}
+
+    payloads = []
+
+    def request(method, endpoint, json_body=None, timeout=5.0):
+        payloads.append(json_body)
+        return {"order_id": "order-no", "fill_count": "0.00"}
+
+    buyer._request = request
+    buyer._submit_with_retries(
+        ticker="TEST-NO",
+        count=plan["count"],
+        price=plan["price"],
+        client_order_id="no-id",
+        outcome_side="no",
+        deadline=10**12,
+        error_limit=1,
+        retry_delay_seconds=0,
+    )
+
+    assert payloads[0]["side"] == "ask"
+    assert payloads[0]["price"] == "0.6500"
+
+
 def test_submit_retries_same_client_id_after_rate_limit():
     buyer = AggressiveBuyer(FakeKalshi())
     seen_ids = []

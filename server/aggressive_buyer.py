@@ -41,6 +41,7 @@ class AggressiveBuyer:
         *,
         ticker: str,
         spend_cap_dollars: float,
+        outcome_side: str = "yes",
         maximum_buy_price: str = "1.0000",
         max_attempts: int = 100,
         max_seconds: float = 10.0,
@@ -59,6 +60,7 @@ class AggressiveBuyer:
             no_progress_limit=no_progress_limit,
             retry_delay_seconds=retry_delay_seconds,
             error_limit=error_limit,
+            outcome_side=outcome_side,
         )
 
         started = time.monotonic()
@@ -108,6 +110,7 @@ class AggressiveBuyer:
                     remaining_budget=remaining,
                     maximum_buy_price=ceiling,
                     count_step=count_step,
+                    outcome_side=outcome_side,
                 )
                 consecutive_errors = 0
             except AggressiveBuyError as exc:
@@ -138,6 +141,7 @@ class AggressiveBuyer:
                     count=plan["count"],
                     price=plan["price"],
                     client_order_id=client_order_id,
+                    outcome_side=outcome_side,
                     deadline=deadline,
                     error_limit=error_limit,
                     retry_delay_seconds=retry_delay_seconds,
@@ -160,7 +164,12 @@ class AggressiveBuyer:
             fill_count = self._first_decimal(
                 result, "fill_count", "fill_count_fp"
             )
-            average_price = self._first_decimal(result, "average_fill_price")
+            average_book_price = self._first_decimal(result, "average_fill_price")
+            average_price = (
+                ONE - average_book_price
+                if outcome_side == "no" and average_book_price > ZERO
+                else average_book_price
+            )
             average_fee = self._first_decimal(result, "average_fee_paid")
             if fill_count > ZERO and average_price <= ZERO:
                 average_price = plan["price"]
@@ -198,6 +207,7 @@ class AggressiveBuyer:
         return {
             "strategy": "aggressive_orderbook_sweep",
             "ticker": ticker,
+            "outcome_side": outcome_side,
             "spend_cap_dollars": self._format_money(cap),
             "contract_cost_dollars": self._format_money(contract_cost),
             "fee_cost_dollars": self._format_money(fees),
@@ -224,6 +234,7 @@ class AggressiveBuyer:
         no_progress_limit: int,
         retry_delay_seconds: float,
         error_limit: int,
+        outcome_side: str,
     ) -> None:
         if cap <= ZERO:
             raise AggressiveBuyError("spend cap must be positive")
@@ -237,6 +248,8 @@ class AggressiveBuyer:
             raise AggressiveBuyError("retry window must be positive")
         if retry_delay_seconds < 0:
             raise AggressiveBuyError("retry delay cannot be negative")
+        if outcome_side not in {"yes", "no"}:
+            raise AggressiveBuyError("outcome side must be 'yes' or 'no'")
 
     def _market_count_step(self, ticker: str) -> Decimal:
         try:
@@ -257,24 +270,26 @@ class AggressiveBuyer:
         remaining_budget: Decimal,
         maximum_buy_price: Decimal,
         count_step: Decimal,
+        outcome_side: str = "yes",
     ) -> dict[str, Decimal] | None:
-        raw_levels = orderbook.get("orderbook_fp", {}).get("no_dollars", [])
+        opposite_book = "no_dollars" if outcome_side == "yes" else "yes_dollars"
+        raw_levels = orderbook.get("orderbook_fp", {}).get(opposite_book, [])
         asks: list[tuple[Decimal, Decimal]] = []
 
         for level in raw_levels:
             if not isinstance(level, (list, tuple)) or len(level) < 2:
                 continue
-            no_bid = Decimal(str(level[0]))
+            opposite_bid = Decimal(str(level[0]))
             count = Decimal(str(level[1]))
-            yes_ask = ONE - no_bid
+            outcome_ask = ONE - opposite_bid
             if (
                 count <= ZERO
-                or yes_ask <= ZERO
-                or yes_ask >= ONE
-                or yes_ask > maximum_buy_price
+                or outcome_ask <= ZERO
+                or outcome_ask >= ONE
+                or outcome_ask > maximum_buy_price
             ):
                 continue
-            asks.append((yes_ask, count))
+            asks.append((outcome_ask, count))
 
         if not asks:
             return None
@@ -307,17 +322,19 @@ class AggressiveBuyer:
         count: Decimal,
         price: Decimal,
         client_order_id: str,
+        outcome_side: str = "yes",
         deadline: float,
         error_limit: int,
         retry_delay_seconds: float,
         cancel_event: threading.Event | None = None,
     ) -> tuple[dict[str, Any], list[str]]:
+        book_price = price if outcome_side == "yes" else ONE - price
         payload = {
             "ticker": ticker,
             "client_order_id": client_order_id,
-            "side": "bid",
+            "side": "bid" if outcome_side == "yes" else "ask",
             "count": self._format_count(count),
-            "price": self._format_price(price),
+            "price": self._format_price(book_price),
             "time_in_force": "immediate_or_cancel",
             "self_trade_prevention_type": "maker",
             "post_only": False,

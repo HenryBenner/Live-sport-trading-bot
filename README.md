@@ -88,7 +88,8 @@ and VPS process restarts.
 
 ## Runtime commands
 
-Trade keys remain single characters such as `A`, `S`, `D`, `F`, `1`, and `2`.
+Trade keys may be one or more uppercase characters, such as `A`, `OVER`, or
+`TEAMNO`. Commands are entered case-insensitively from the phone.
 
 ```text
 /help
@@ -130,6 +131,7 @@ state but does not remove command blocks.
 
 `spend_up_to_dollars` is the normal per-press all-in ceiling. It can be changed for
 the active session with `/limit press A AMOUNT`.
+Set `side` to `"yes"` or `"no"` to buy that exact Kalshi outcome.
 
 ## Files written at runtime
 

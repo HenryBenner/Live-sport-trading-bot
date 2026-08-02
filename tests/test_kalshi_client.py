@@ -35,3 +35,30 @@ def test_invalid_inline_private_key_has_clear_error(monkeypatch):
         assert "not a valid" in str(exc)
     else:
         raise AssertionError("Invalid inline key should be rejected")
+
+
+def test_no_test_buy_uses_ask_side_and_normalizes_fill_price(monkeypatch):
+    client = KalshiClient()
+    payloads = []
+
+    def request(method, endpoint, json_body=None):
+        payloads.append(json_body)
+        return {
+            "fill_count": "1.00",
+            "average_fill_price": "0.0100",
+            "average_fee_paid": "0.0010",
+        }
+
+    monkeypatch.setattr(client, "_request", request)
+    result = client.place_outcome_buy(
+        ticker="TEST-NO",
+        outcome_side="no",
+        spend_up_to_dollars=1,
+        mode="test",
+        aggressive_buy_price="0.9900",
+    )
+
+    assert payloads[0]["side"] == "ask"
+    assert payloads[0]["price"] == "0.0100"
+    assert result["average_fill_price"] == "0.9900"
+    assert result["outcome_side"] == "no"

@@ -134,17 +134,41 @@ class KalshiClient:
         mode: str,
         aggressive_buy_price: str = "0.9900",
     ) -> dict[str, Any]:
+        return self.place_outcome_buy(
+            ticker=ticker,
+            outcome_side="yes",
+            spend_up_to_dollars=spend_up_to_dollars,
+            mode=mode,
+            aggressive_buy_price=aggressive_buy_price,
+        )
+
+    def place_outcome_buy(
+        self,
+        *,
+        ticker: str,
+        outcome_side: str,
+        spend_up_to_dollars: float,
+        mode: str,
+        aggressive_buy_price: str = "0.9900",
+    ) -> dict[str, Any]:
         count = "1.00" if mode == "test" else self._count_from_spend(
             spend_up_to_dollars,
             aggressive_buy_price,
+        )
+        outcome_price = Decimal(str(aggressive_buy_price))
+        book_side = "bid" if outcome_side == "yes" else "ask"
+        book_price = (
+            outcome_price
+            if outcome_side == "yes"
+            else Decimal("1") - outcome_price
         )
 
         payload = {
             "ticker": ticker,
             "client_order_id": f"cmd-{uuid.uuid4()}",
-            "side": "bid",
+            "side": book_side,
             "count": count,
-            "price": aggressive_buy_price,
+            "price": format(book_price, "f"),
             "time_in_force": "immediate_or_cancel",
             "self_trade_prevention_type": "taker_at_cross",
             "post_only": False,
@@ -154,7 +178,14 @@ class KalshiClient:
             "exchange_index": self.exchange_index,
         }
 
-        return self._request("POST", "/portfolio/events/orders", json_body=payload)
+        result = self._request("POST", "/portfolio/events/orders", json_body=payload)
+        if outcome_side == "no" and result.get("average_fill_price") not in (None, ""):
+            result = dict(result)
+            result["average_fill_price"] = format(
+                Decimal("1") - Decimal(str(result["average_fill_price"])), "f"
+            )
+        result["outcome_side"] = outcome_side
+        return result
 
     def sell_yes_position(
         self,
@@ -163,21 +194,46 @@ class KalshiClient:
         mode: str,
         aggressive_sell_price: str = "0.0100",
     ) -> dict[str, Any]:
-        yes_position = self.get_yes_position(ticker)
-        if yes_position <= Decimal("0"):
-            raise KalshiClientError(f"No YES position found for {ticker}.")
+        return self.sell_outcome_position(
+            ticker=ticker,
+            outcome_side="yes",
+            mode=mode,
+            aggressive_sell_price=aggressive_sell_price,
+        )
+
+    def sell_outcome_position(
+        self,
+        *,
+        ticker: str,
+        outcome_side: str,
+        mode: str,
+        aggressive_sell_price: str = "0.0100",
+    ) -> dict[str, Any]:
+        position = self.get_outcome_position(ticker, outcome_side)
+        if position <= Decimal("0"):
+            raise KalshiClientError(
+                f"No {outcome_side.upper()} position found for {ticker}."
+            )
 
         if mode == "test":
-            count = min(yes_position, Decimal("1")).quantize(Decimal("0.01"))
+            count = min(position, Decimal("1")).quantize(Decimal("0.01"))
         else:
-            count = yes_position.quantize(Decimal("0.01"))
+            count = position.quantize(Decimal("0.01"))
+
+        outcome_price = Decimal(str(aggressive_sell_price))
+        book_side = "ask" if outcome_side == "yes" else "bid"
+        book_price = (
+            outcome_price
+            if outcome_side == "yes"
+            else Decimal("1") - outcome_price
+        )
 
         payload = {
             "ticker": ticker,
             "client_order_id": f"cmd-{uuid.uuid4()}",
-            "side": "ask",
+            "side": book_side,
             "count": format(count, "f"),
-            "price": aggressive_sell_price,
+            "price": format(book_price, "f"),
             "time_in_force": "immediate_or_cancel",
             "self_trade_prevention_type": "taker_at_cross",
             "post_only": False,
@@ -190,6 +246,9 @@ class KalshiClient:
         return self._request("POST", "/portfolio/events/orders", json_body=payload)
 
     def get_yes_position(self, ticker: str) -> Decimal:
+        return self.get_outcome_position(ticker, "yes")
+
+    def get_outcome_position(self, ticker: str, outcome_side: str) -> Decimal:
         query = urlencode(
             {
                 "ticker": ticker,
@@ -204,9 +263,8 @@ class KalshiClient:
             if position.get("ticker") == ticker:
                 raw = position.get("position_fp", "0")
                 value = Decimal(str(raw))
-                if value > 0:
-                    return value
-                return Decimal("0")
+                directional = value if outcome_side == "yes" else -value
+                return max(directional, Decimal("0"))
 
         return Decimal("0")
 

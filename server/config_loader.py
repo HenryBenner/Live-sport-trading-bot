@@ -49,8 +49,18 @@ def validate_config(config: dict[str, Any]) -> None:
 
     buy_tickers: set[str] = set()
     for key, command in commands.items():
-        if not isinstance(key, str) or len(key) != 1:
-            raise ConfigError(f"Command key must be a single character: {key!r}")
+        if (
+            not isinstance(key, str)
+            or not key.strip()
+            or key != key.strip()
+            or key.startswith("/")
+        ):
+            raise ConfigError(
+                "Command key must be non-empty, have no surrounding whitespace, "
+                f"and must not start with '/': {key!r}"
+            )
+        if key != key.upper():
+            raise ConfigError(f"Command key must be uppercase: {key!r}")
 
         if not isinstance(command, dict):
             raise ConfigError(f"Command {key} must be an object.")
@@ -70,10 +80,8 @@ def validate_config(config: dict[str, Any]) -> None:
             _require(command, "side", key)
             _require(command, "spend_up_to_dollars", key)
 
-            if command["side"] != "yes":
-                raise ConfigError(
-                    f"Command {key} side must be 'yes' in this slim version."
-                )
+            if command["side"] not in {"yes", "no"}:
+                raise ConfigError(f"Command {key} side must be 'yes' or 'no'.")
 
             try:
                 spend = float(command["spend_up_to_dollars"])
@@ -119,6 +127,7 @@ def profile_summary(config: dict[str, Any]) -> dict[str, Any]:
                 "market_ticker": command.get("market_ticker", ""),
                 "market_url": command.get("market_url", ""),
                 "line_or_prop": command.get("line_or_prop", ""),
+                "side": command.get("side", ""),
                 "spend_up_to_dollars": command.get("spend_up_to_dollars"),
             }
         )

@@ -41,6 +41,16 @@ def event_config():
                 "spend_up_to_dollars": 50,
                 "enabled": True,
             },
+            "TEAMNO": {
+                "label": "B wins",
+                "action": "buy",
+                "market_ticker": "EVENT-1-B",
+                "market_url": "https://kalshi.com/markets/EVENT-1-B",
+                "line_or_prop": "B to win",
+                "side": "no",
+                "spend_up_to_dollars": 50,
+                "enabled": True,
+            },
             "M": {
                 "label": "Sell last",
                 "action": "sell_last_market_position",
@@ -134,6 +144,30 @@ def test_config_requires_exact_urls_and_prop_text():
         assert "line_or_prop" in str(exc)
     else:
         raise AssertionError("Config without line_or_prop should fail validation")
+
+
+def test_multi_letter_command_and_no_side_are_allowed(tmp_path, monkeypatch):
+    config = event_config()
+    validate_config(config)
+    router, _ = make_router(tmp_path, monkeypatch)
+
+    response = asyncio.run(router.route("teamno"))
+
+    assert response["status"] == "paper_ok"
+    assert response["key"] == "TEAMNO"
+    assert "Configured side: NO" in response["message"]
+
+
+def test_config_rejects_unknown_outcome_side():
+    config = event_config()
+    config["commands"]["TEAMNO"]["side"] = "maybe"
+
+    try:
+        validate_config(config)
+    except ConfigError as exc:
+        assert "'yes' or 'no'" in str(exc)
+    else:
+        raise AssertionError("Config with an unknown side should fail validation")
 
 
 def test_audit_log_is_json_lines(tmp_path):

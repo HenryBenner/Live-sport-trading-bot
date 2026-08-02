@@ -20,13 +20,13 @@ Return one JSON object with:
 
 Every buy command must contain:
 
-- one-character key;
+- non-empty uppercase key, which may contain multiple letters;
 - exact operator-facing label;
 - `action: "buy"`;
 - exact `market_ticker`;
 - `market_url` containing that exact ticker;
 - exact `line_or_prop` wording supplied for the match;
-- `side: "yes"`;
+- `side: "yes"` or `side: "no"`, matching the supplied Kalshi outcome;
 - per-press all-in ceiling in `spend_up_to_dollars`;
 - `enabled: true` or `false`.
 
