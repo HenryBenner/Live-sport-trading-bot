@@ -10,6 +10,7 @@ from urllib.parse import urlencode
 import requests
 
 from .kalshi_client import KalshiClient
+from .trading_limits import HARD_MAX_BUY_PRICE
 
 
 ZERO = Decimal("0")
@@ -42,7 +43,7 @@ class AggressiveBuyer:
         ticker: str,
         spend_cap_dollars: float,
         outcome_side: str = "yes",
-        maximum_buy_price: str = "1.0000",
+        maximum_buy_price: str = "0.9000",
         max_attempts: int = 100,
         max_seconds: float = 10.0,
         no_progress_limit: int = 20,
@@ -51,10 +52,10 @@ class AggressiveBuyer:
         cancel_event: threading.Event | None = None,
     ) -> dict[str, Any]:
         cap = Decimal(str(spend_cap_dollars))
-        ceiling = Decimal(str(maximum_buy_price))
+        requested_ceiling = Decimal(str(maximum_buy_price))
         self._validate(
             cap=cap,
-            ceiling=ceiling,
+            ceiling=requested_ceiling,
             max_attempts=max_attempts,
             max_seconds=max_seconds,
             no_progress_limit=no_progress_limit,
@@ -62,6 +63,7 @@ class AggressiveBuyer:
             error_limit=error_limit,
             outcome_side=outcome_side,
         )
+        ceiling = min(requested_ceiling, HARD_MAX_BUY_PRICE)
 
         started = time.monotonic()
         deadline = started + max_seconds
@@ -208,6 +210,7 @@ class AggressiveBuyer:
             "strategy": "aggressive_orderbook_sweep",
             "ticker": ticker,
             "outcome_side": outcome_side,
+            "maximum_buy_price": self._format_price(ceiling),
             "spend_cap_dollars": self._format_money(cap),
             "contract_cost_dollars": self._format_money(contract_cost),
             "fee_cost_dollars": self._format_money(fees),
@@ -272,6 +275,7 @@ class AggressiveBuyer:
         count_step: Decimal,
         outcome_side: str = "yes",
     ) -> dict[str, Decimal] | None:
+        maximum_buy_price = min(maximum_buy_price, HARD_MAX_BUY_PRICE)
         opposite_book = "no_dollars" if outcome_side == "yes" else "yes_dollars"
         raw_levels = orderbook.get("orderbook_fp", {}).get(opposite_book, [])
         asks: list[tuple[Decimal, Decimal]] = []

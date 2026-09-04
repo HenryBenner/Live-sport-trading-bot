@@ -5,7 +5,7 @@
   "event_ticker": "EXACT_KALSHI_EVENT_TICKER",
   "event_url": "https://kalshi.com/events/EXACT_KALSHI_EVENT_TICKER",
   "mode": "paper",
-  "aggressive_buy_price": "1.0000",
+  "aggressive_buy_price": "0.9000",
   "aggressive_sell_price": "0.0100",
   "buy_retry_max_attempts": 100,
   "buy_retry_max_seconds": 10.0,

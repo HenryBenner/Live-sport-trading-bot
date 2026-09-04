@@ -13,6 +13,8 @@ from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import padding
 
+from .trading_limits import HARD_MAX_BUY_PRICE
+
 
 class KalshiClientError(RuntimeError):
     pass
@@ -132,7 +134,7 @@ class KalshiClient:
         ticker: str,
         spend_up_to_dollars: float,
         mode: str,
-        aggressive_buy_price: str = "0.9900",
+        aggressive_buy_price: str = "0.9000",
     ) -> dict[str, Any]:
         return self.place_outcome_buy(
             ticker=ticker,
@@ -149,13 +151,18 @@ class KalshiClient:
         outcome_side: str,
         spend_up_to_dollars: float,
         mode: str,
-        aggressive_buy_price: str = "0.9900",
+        aggressive_buy_price: str = "0.9000",
     ) -> dict[str, Any]:
+        requested_price = Decimal(str(aggressive_buy_price))
+        if requested_price <= 0 or requested_price > 1:
+            raise KalshiClientError(
+                "aggressive_buy_price must be greater than 0 and at most 1.0000."
+            )
+        outcome_price = min(requested_price, HARD_MAX_BUY_PRICE)
         count = "1.00" if mode == "test" else self._count_from_spend(
             spend_up_to_dollars,
-            aggressive_buy_price,
+            format(outcome_price, "f"),
         )
-        outcome_price = Decimal(str(aggressive_buy_price))
         book_side = "bid" if outcome_side == "yes" else "ask"
         book_price = (
             outcome_price

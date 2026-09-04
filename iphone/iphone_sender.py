@@ -116,6 +116,8 @@ def print_pretty(raw: str) -> None:
         print("Mode:", data.get("mode", ""))
         if data.get("mode_source"):
             print("Mode source:", data.get("mode_source"))
+        if data.get("maximum_buy_price"):
+            print("Maximum buy price:", f"${data.get('maximum_buy_price')}")
         print("Kill switch:", "ACTIVE" if data.get("kill_switch_active") else "off")
         event_cap_value = data.get("event_cap_dollars")
         event_cap = f"${event_cap_value}" if event_cap_value else "infinite"

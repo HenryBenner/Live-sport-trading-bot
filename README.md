@@ -141,6 +141,8 @@ active buy sweep to stop; later commands use the new mode.
 `spend_up_to_dollars` is the normal per-press all-in ceiling. It can be changed for
 the active session with `/limit press A AMOUNT`.
 Set `side` to `"yes"` or `"no"` to buy that exact Kalshi outcome.
+The bot has a hard maximum buy price of `$0.9000` per contract. A config may set
+`aggressive_buy_price` lower, but values above `$0.9000` are capped at `$0.9000`.
 
 ## Files written at runtime
 

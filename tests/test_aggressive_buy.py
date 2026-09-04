@@ -38,6 +38,21 @@ def test_build_sweep_uses_multiple_levels_without_exceeding_cap():
     assert plan["count"] * plan["price"] <= Decimal("70")
 
 
+def test_hard_ceiling_includes_ninety_cents_and_rejects_more():
+    buyer = AggressiveBuyer(FakeKalshi())
+    plan = buyer._build_sweep_order(
+        orderbook=book(
+            (Decimal("0.10"), Decimal("5")),
+            (Decimal("0.05"), Decimal("100")),
+        ),
+        remaining_budget=Decimal("100"),
+        maximum_buy_price=Decimal("1"),
+        count_step=Decimal("1"),
+    )
+
+    assert plan == {"count": Decimal("5"), "price": Decimal("0.90")}
+
+
 def test_no_sweep_uses_yes_bids_and_submits_an_ask():
     buyer = AggressiveBuyer(FakeKalshi())
     plan = buyer._build_sweep_order(

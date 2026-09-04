@@ -78,6 +78,8 @@ def make_router(tmp_path, monkeypatch):
 def test_block_and_limits_persist_for_same_event(tmp_path, monkeypatch):
     router, runtime = make_router(tmp_path, monkeypatch)
 
+    assert router.status_response()["maximum_buy_price"] == "0.9000"
+
     response = asyncio.run(router.route("/block A"))
     assert response["type"] == "control"
     assert runtime.is_blocked("A")
@@ -189,6 +191,7 @@ def test_multi_letter_command_and_no_side_are_allowed(tmp_path, monkeypatch):
     assert response["status"] == "paper_ok"
     assert response["key"] == "TEAMNO"
     assert "Configured side: NO" in response["message"]
+    assert "Maximum buy price: $0.90" in response["message"]
 
 
 def test_config_rejects_unknown_outcome_side():

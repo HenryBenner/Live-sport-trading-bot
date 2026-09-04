@@ -13,10 +13,12 @@ from .kalshi_client import KalshiClient, KalshiClientError
 from .mode_handler import handle_buy, handle_sell_last
 from .open_order_manager import OpenOrderManager
 from .runtime_state import RuntimeState, RuntimeStateError, money_text, parse_optional_money
+from .trading_limits import HARD_MAX_BUY_PRICE
 
 
 ZERO = Decimal("0")
 CENT = Decimal("0.01")
+MAX_SINGLE_TEST_CONTRACT_COST = Decimal("0.9000")
 
 
 class CommandRouter:
@@ -105,7 +107,7 @@ class CommandRouter:
                     key,
                     "Remaining all-in allowance is too small after the fee reserve.",
                 )
-            if mode == "test" and contract_budget < Decimal("0.9900"):
+            if mode == "test" and contract_budget < MAX_SINGLE_TEST_CONTRACT_COST:
                 return self._error(
                     key,
                     "Remaining all-in allowance is too small for a one-contract test order.",
@@ -389,6 +391,12 @@ class CommandRouter:
                 "runtime command"
                 if self.runtime.mode_override() is not None
                 else "event config"
+            ),
+            "maximum_buy_price": money_text(
+                min(
+                    Decimal(str(self.config.get("aggressive_buy_price", "0.9000"))),
+                    HARD_MAX_BUY_PRICE,
+                )
             ),
             "kill_switch_active": self.runtime.kill_active(),
             "event_cap_dollars": money_text(self._effective_event_cap()),

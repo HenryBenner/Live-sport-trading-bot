@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import threading
+from decimal import Decimal
 from typing import Any
 
 from .aggressive_buyer import AggressiveBuyer
 from .kalshi_client import KalshiClient
+from .trading_limits import HARD_MAX_BUY_PRICE
 
 
 def handle_buy(
@@ -20,6 +22,8 @@ def handle_buy(
     label = command.get("label", "")
     ticker = command.get("market_ticker", "")
     outcome_side = command.get("side", "yes")
+    configured_ceiling = config.get("aggressive_buy_price", "0.9000")
+    effective_ceiling = min(Decimal(str(configured_ceiling)), HARD_MAX_BUY_PRICE)
     spend = (
         float(spend_cap_dollars)
         if spend_cap_dollars is not None
@@ -35,7 +39,8 @@ def handle_buy(
             "market_ticker": ticker,
             "message": (
                 f"Would aggressively sweep {label} up to ${spend:.2f}. "
-                f"Configured side: {outcome_side.upper()}. No Kalshi order placed."
+                f"Configured side: {outcome_side.upper()}. Maximum buy price: "
+                f"${effective_ceiling:.2f}. No Kalshi order placed."
             ),
         }
 
@@ -45,7 +50,7 @@ def handle_buy(
             outcome_side=outcome_side,
             spend_up_to_dollars=spend,
             mode=mode,
-            aggressive_buy_price="0.9900",
+            aggressive_buy_price=format(effective_ceiling, "f"),
         )
         message = f"Submitted one-contract test buy for {label}."
     else:
@@ -53,7 +58,7 @@ def handle_buy(
             ticker=ticker,
             outcome_side=outcome_side,
             spend_cap_dollars=spend,
-            maximum_buy_price=config.get("aggressive_buy_price", "1.0000"),
+            maximum_buy_price=format(effective_ceiling, "f"),
             max_attempts=int(config.get("buy_retry_max_attempts", 100)),
             max_seconds=float(config.get("buy_retry_max_seconds", 10.0)),
             no_progress_limit=int(
